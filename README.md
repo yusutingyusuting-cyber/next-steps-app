@@ -37,6 +37,8 @@ claude plugin install next-steps-app@next-steps-app --scope user
 
 ## 在云端会话中使用
 
+注意：经实测，云端会话会加载本插件并生成建议，但打开云端会话的界面目前不会绘制面板，因此看不到效果。以下配置仅供界面将来支持时使用。
+
 云端会话不会读取你电脑上的设置。如果希望云端会话也加载本插件，需要把下面的内容写入你项目仓库的 `.claude/settings.json` 并提交：
 
 ```json
@@ -58,6 +60,7 @@ claude plugin install next-steps-app@next-steps-app --scope user
 | --- | --- |
 | 终端 | 能 |
 | Claude Code 桌面 App | 能 |
+| 云端会话（在桌面 App、网页或手机中打开） | 不能：插件会加载并生成建议，但这些界面不会请求插件绘制面板 |
 | 手机或网页上的远程控制、Claude 普通聊天 | 不能：这些界面不绘制插件内容 |
 
 ## 选项

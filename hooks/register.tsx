@@ -146,24 +146,6 @@ function show($: EngineInterface, nextView: View): Promise<unknown> {
   return update($, view, () => nextView)
 }
 
-// Diagnostics: each step appends a line to debug.log beside the plugin, a
-// render line only once per distinct text, so the log shows where an offer
-// stops on its way to a surface.
-const traceLines: string[] = []
-const traceSeen = new Set<string>()
-
-function trace($: EngineInterface, line: string, once = false): void {
-  if (once) {
-    if (traceSeen.has(line)) return
-    traceSeen.add(line)
-  }
-  traceLines.push(`${new Date().toISOString()} ${line}`)
-  if (traceLines.length > 400) traceLines.splice(0, traceLines.length - 400)
-  void $.fs
-    .write(`${$.plugin.root}/debug.log`, traceLines.join('\n') + '\n')
-    .catch(error => $.ui.log(`next-steps-app trace: ${String(error)}`, { to: 'debug' }))
-}
-
 // A press hides the offer and writes the prompt into the composer as a draft.
 // Where the surface has no composer the plugin can fill (the mobile app may
 // not), the prompt goes to the clipboard instead.
@@ -171,10 +153,8 @@ async function take($: EngineInterface, prompt: string, surface: string): Promis
   void show($, { kind: 'hidden' })
   try {
     const filled = await $.prompt.fill({ text: prompt })
-    trace($, `press on ${surface}: isFilled=${filled.isFilled} refusal=${filled.refusal ?? '-'}`)
     if (filled.isFilled) return
     const copied = await $.ui.copy({ text: prompt, surface: surface as never })
-    trace($, `copy on ${surface}: isCopied=${copied.isCopied}`)
     $.ui.toast(copied.isCopied ? '已复制，粘贴到输入框即可' : `没能填入输入框：${prompt}`)
   } catch (error) {
     $.ui.toast(`没能填入输入框：${String(error)}`)
@@ -204,16 +184,6 @@ export const register: Register = (on, options) => {
   const minTurnChars = typeof options?.minAnswerChars === 'number' ? options.minAnswerChars : 80
   const suggestsSkills = options?.suggestSkills !== false
 
-  // Diagnostics: when the session starts and which surfaces attach to draw.
-  on('session.start', async ($, e, next) => {
-    trace($, `session.start: plugin root ${$.plugin.root}`)
-    return next(e)
-  })
-  on('session.attach', async ($, e, next) => {
-    trace($, `session.attach: ${e.surface} (${e.clientId})`)
-    return next(e)
-  })
-
   // A new turn (typed or otherwise) hides whatever was offered.
   on('turn.start', async ($, e, next) => {
     if ((await read($, view))?.kind !== 'hidden') await show($, { kind: 'hidden' })
@@ -223,7 +193,6 @@ export const register: Register = (on, options) => {
   // Turn over: ask the fork, detached, so the turn's completion never waits on it.
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
-    trace($, `turn.complete ${e.turnId}: reason=${e.reason} answer=${e.answer.trim().length} chars agent=${e.agentId ?? 'main'}`)
     if (e.agentId !== undefined) return result
     if (e.reason !== 'answer' || e.answer.trim().length < minTurnChars) return result
     const turnId = e.turnId
@@ -238,17 +207,12 @@ export const register: Register = (on, options) => {
         const skills = suggestsSkills && commands !== null ? skillList(commands) : ''
         const reply = await $.model.fork({ prompt: forkPrompt(skills) })
         items = reply.isAnswered ? parseSuggestions(reply.text, known) : []
-        trace($, `fork ${turnId}: ${reply.isAnswered ? `answered, ${items.length} items from ${reply.text.length} chars` : `not answered: ${reply.reason}`}`)
       } catch (error) {
-        trace($, `fork ${turnId}: failed: ${String(error)}`)
         $.ui.log(`fork failed: ${String(error)}`)
       }
       // A newer turn started (or another completed) while we waited: drop ours.
       const current = await read($, view)
-      if (current?.kind !== 'loading' || current.turnId !== turnId) {
-        trace($, `fork ${turnId}: dropped, view is ${current?.kind ?? 'unset'}`)
-        return
-      }
+      if (current?.kind !== 'loading' || current.turnId !== turnId) return
       await show($, items.length === 0 ? { kind: 'hidden' } : { kind: 'offer', items, answer })
       if (items[0] !== undefined) void $.prompt.suggest({ text: items[0].prompt }).catch(() => undefined)
     })()
@@ -258,7 +222,6 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next): Promise<RenderElement> => {
     const below = await next(e)
     const current = await read($, view)
-    trace($, `render AbovePrompt on ${e.surface}: view=${current?.kind ?? 'unset'}`, true)
     if (e.props.hasSurvey || e.props.isWorking || !current || current.kind === 'hidden') return below
     const { Box, Text, Button } = $.ui.resolve(e)
 
@@ -303,13 +266,8 @@ export const register: Register = (on, options) => {
   // reply it follows instead.
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next): Promise<RenderElement> => {
     const below = await next(e)
-    if (e.surface === 'terminal') return below
-    const current = await read($, view)
-    if (current?.kind === 'offer') {
-      const head = e.props.text.trim().slice(-24).replace(/\s+/g, ' ')
-      trace($, `render AssistantMessage on ${e.surface}: follows=${follows(current.answer, e.props.text)} tail="${head}"`, true)
-    }
     if (e.surface !== 'mobile') return below
+    const current = await read($, view)
     if (!current || current.kind !== 'offer' || !follows(current.answer, e.props.text)) return below
     const { Box, Text, Button } = $.ui.resolve(e)
 
