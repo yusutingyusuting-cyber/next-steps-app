@@ -1,0 +1,13 @@
+{
+  "name": "next-steps-app",
+  "owner": {
+    "name": "yusutingyusuting-cyber"
+  },
+  "plugins": [
+    {
+      "name": "next-steps-app",
+      "source": "./",
+      "description": "After each turn, suggests up to three next prompts above the input box (terminal and Claude Code desktop app), including a skill or slash command when one is the natural next step. Press or click 1-3 to put one in the box as a draft, 0 to dismiss."
+    }
+  ]
+}
